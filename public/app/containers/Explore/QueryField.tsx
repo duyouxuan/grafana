@@ -348,7 +348,7 @@ class QueryField extends React.Component<any, any> {
           // Dont blur input
           event.preventDefault();
           if (!suggestions || suggestions.length === 0) {
-            return;
+            return undefined;
           }
 
           // Get the currently selected suggestion
@@ -381,6 +381,7 @@ class QueryField extends React.Component<any, any> {
         }
       }
     }
+    return undefined;
   };
 
   resetTypeahead = () => {

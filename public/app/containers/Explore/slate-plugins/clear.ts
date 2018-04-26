@@ -16,6 +16,7 @@ export default function ClearPlugin() {
         change.deleteForward(forward);
         return true;
       }
+      return undefined;
     },
   };
 }

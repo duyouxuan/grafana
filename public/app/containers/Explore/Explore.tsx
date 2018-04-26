@@ -1,15 +1,36 @@
 import React from 'react';
 import { hot } from 'react-hot-loader';
-import { inject, observer } from 'mobx-react';
+// import { observer } from 'mobx-react';
 import colors from 'app/core/utils/colors';
 import TimeSeries from 'app/core/time_series2';
-import appEvents from 'app/core/app_events';
+// import appEvents from 'app/core/app_events';
 
 import ElapsedTime from './ElapsedTime';
 import Legend from './Legend';
 import QueryField from './QueryField';
 import Graph from './Graph';
+import Table from './Table';
 import { DatasourceSrv } from 'app/features/plugins/datasource_srv';
+import TableModel from 'app/core/table_model';
+
+function buildQueryOptions({ format, interval, instant, now, query }) {
+  const to = now;
+  const from = to - 1000 * 60 * 60 * 3;
+  return {
+    interval,
+    range: {
+      from,
+      to,
+    },
+    targets: [
+      {
+        expr: query,
+        format,
+        instant,
+      },
+    ],
+  };
+}
 
 function makeTimeSeriesList(dataList, options) {
   return dataList.map((seriesData, index) => {
@@ -38,20 +59,35 @@ function makeTimeSeriesList(dataList, options) {
   });
 }
 
-@observer
-export class Explore extends React.Component<any, any> {
+interface IExploreState {
+  datasource: any;
+  datasourceError: any;
+  datasourceLoading: any;
+  graphResult: any;
+  latency: number;
+  loading: any;
+  requestOptions: any;
+  tableResult: any;
+}
+
+// @observer
+export class Explore extends React.Component<any, IExploreState> {
   datasourceSrv: DatasourceSrv;
   query: string;
 
-  state = {
-    datasource: null,
-    datasourceError: null,
-    datasourceLoading: true,
-    latency: 0,
-    loading: false,
-    requestOptions: null,
-    result: null,
-  };
+  constructor(props) {
+    super(props);
+    this.state = {
+      datasource: null,
+      datasourceError: null,
+      datasourceLoading: true,
+      graphResult: null,
+      latency: 0,
+      loading: false,
+      requestOptions: null,
+      tableResult: null,
+    };
+  }
 
   async componentDidMount() {
     const datasource = await this.props.datasourceSrv.get();
@@ -72,41 +108,58 @@ export class Explore extends React.Component<any, any> {
   };
 
   handleSubmit = () => {
-    this.runQuery();
+    const mode = 'both';
+    if (mode === 'both' || mode === 'table') {
+      this.runTableQuery();
+    }
+    if (mode === 'both' || mode === 'graph') {
+      this.runGraphQuery();
+    }
   };
 
-  async runQuery() {
+  async runGraphQuery() {
     const { query } = this;
     const { datasource } = this.state;
     if (!query) {
       return;
     }
-    this.setState({ latency: 0, loading: true, result: null });
-
-    const jetzt = Date.now();
-    const to = jetzt;
-    const from = to - 1000 * 60 * 60 * 3;
-    const options = {
+    this.setState({ latency: 0, loading: true, graphResult: null });
+    const now = Date.now();
+    const options = buildQueryOptions({
+      format: 'time_series',
       interval: datasource.interval,
-      range: {
-        from,
-        to,
-      },
-      targets: [
-        {
-          expr: query,
-        },
-      ],
-    };
-
+      instant: false,
+      now,
+      query,
+    });
     try {
       const res = await datasource.query(options);
       const result = makeTimeSeriesList(res.data, options);
-      const latency = Date.now() - jetzt;
-      this.setState({ latency, loading: false, result, requestOptions: options });
+      const latency = Date.now() - now;
+      this.setState({ latency, loading: false, graphResult: result, requestOptions: options });
     } catch (error) {
       console.error(error);
-      this.setState({ loading: false, result: error });
+      this.setState({ loading: false, graphResult: error });
+    }
+  }
+
+  async runTableQuery() {
+    const { query } = this;
+    const { datasource } = this.state;
+    if (!query) {
+      return;
+    }
+    this.setState({ latency: 0, loading: true, tableResult: null });
+    const now = Date.now();
+    const options = buildQueryOptions({ format: 'table', interval: datasource.interval, instant: true, now, query });
+    try {
+      const res = await datasource.query(options);
+      const tableModel = res.data[0];
+      const latency = Date.now() - now;
+      this.setState({ latency, loading: false, tableResult: tableModel, requestOptions: options });
+    } catch (error) {
+      console.error(error);
+      this.setState({ loading: false, tableResult: null });
     }
   }
 
@@ -116,7 +169,16 @@ export class Explore extends React.Component<any, any> {
   };
 
   render() {
-    const { datasource, datasourceError, datasourceLoading, latency, loading, requestOptions, result } = this.state;
+    const {
+      datasource,
+      datasourceError,
+      datasourceLoading,
+      latency,
+      loading,
+      requestOptions,
+      graphResult,
+      tableResult,
+    } = this.state;
     return (
       <div>
         <div className="page-body page-full">
@@ -126,7 +188,18 @@ export class Explore extends React.Component<any, any> {
           {datasourceError ? <div title={datasourceError}>Error connecting to datasource.</div> : null}
 
           {datasource ? (
-            <div>
+            <div className="m-r-3">
+              <div className="nav m-b-1">
+                <div className="pull-right" style={{ paddingRight: '6rem' }}>
+                  <button type="submit" className="m-l-1 btn btn-primary" onClick={this.handleSubmit}>
+                    <i className="fa fa-return" /> Run Query
+                  </button>
+                </div>
+                <div>
+                  <button className="btn btn-inverse m-r-1">Graph</button>
+                  <button className="btn m-r-0">Table</button>
+                </div>
+              </div>
               <div className="query-field-wrapper">
                 <QueryField
                   request={this.request}
@@ -135,13 +208,11 @@ export class Explore extends React.Component<any, any> {
                   onRequestError={this.handleRequestError}
                 />
               </div>
-              <button type="submit" className="m-l-1 btn btn-success" onClick={this.handleSubmit}>
-                <i className="fa fa-save" /> Run Query
-              </button>
               {loading || latency ? <ElapsedTime time={latency} className="m-l-1" /> : null}
               <main className="m-t-2">
-                {result ? <Graph data={result} id="explore-1" options={requestOptions} /> : null}
-                {result ? <Legend data={result} /> : null}
+                {graphResult ? <Graph data={graphResult} id="explore-1" options={requestOptions} /> : null}
+                {graphResult ? <Legend data={graphResult} /> : null}
+                {tableResult ? <Table data={tableResult} className="m-t-3" /> : null}
               </main>
             </div>
           ) : null}

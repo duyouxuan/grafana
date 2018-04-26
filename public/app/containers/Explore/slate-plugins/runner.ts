@@ -8,6 +8,7 @@ export default function RunnerPlugin({ handler }) {
         handler(event);
         return true;
       }
+      return undefined;
     },
   };
 }
